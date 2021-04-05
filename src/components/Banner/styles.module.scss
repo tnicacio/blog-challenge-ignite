@@ -1,0 +1,16 @@
+.banner {
+  width: 100%;
+  height: 25rem;
+  margin-bottom: 4rem;
+  overflow: hidden;
+
+  img {
+    display: flex;
+    justify-self: center;
+    margin: 0 auto;
+    // transform: translate(0, -20%);
+    overflow: hidden;
+    max-width: 720px;
+    min-width: 720px;
+  }
+}

@@ -32,9 +32,13 @@ interface PostPagination {
 
 interface HomeProps {
   postsPagination: PostPagination;
+  preview: Promise<void>;
 }
 
-export default function Home({ postsPagination }: HomeProps): JSX.Element {
+export default function Home({
+  postsPagination,
+  preview,
+}: HomeProps): JSX.Element {
   const [nextPageUri, setNextPageUri] = useState(
     postsPagination.next_page || ''
   );
@@ -52,13 +56,6 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
       return {
         uid,
         first_publication_date,
-        // formattedFirstPublicationDate: format(
-        //   parseISO(first_publication_date),
-        //   'dd MMM yyyy',
-        //   {
-        //     locale: ptBR,
-        //   }
-        // ).toLowerCase(),
         data: {
           title,
           subtitle,
@@ -98,13 +95,15 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
                 <div className={styles.info}>
                   <time>
                     <FiCalendar />
-                    {format(
-                      parseISO(post.first_publication_date),
-                      'dd MMM yyyy',
-                      {
-                        locale: ptBR,
-                      }
-                    ).toLowerCase()}
+                    {post.first_publication_date
+                      ? format(
+                          parseISO(post.first_publication_date),
+                          'dd MMM yyyy',
+                          {
+                            locale: ptBR,
+                          }
+                        ).toLowerCase()
+                      : ' unpublished'}
                   </time>
                   <span>
                     <FiUser /> {post.data.author}
@@ -118,19 +117,31 @@ export default function Home({ postsPagination }: HomeProps): JSX.Element {
               Carregar mais posts
             </button>
           )}
+
+          {preview && (
+            <aside className={commonStyles.previewButton}>
+              <Link href="/api/exit-preview">
+                <a>Sair do modo Preview</a>
+              </Link>
+            </aside>
+          )}
         </div>
       </main>
     </>
   );
 }
 
-export const getStaticProps: GetStaticProps = async () => {
+export const getStaticProps: GetStaticProps = async ({
+  preview = false,
+  previewData,
+}) => {
   const prismic = getPrismicClient();
   const postsResponse = await prismic.query(
     [Prismic.predicates.at('document.type', 'posts')],
     {
       fetch: ['posts.title', 'posts.subtitle', 'posts.author'],
-      pageSize: 1,
+      pageSize: 10,
+      ref: previewData?.ref ?? null,
     }
   );
 
@@ -141,13 +152,6 @@ export const getStaticProps: GetStaticProps = async () => {
     return {
       uid,
       first_publication_date,
-      // formattedFirstPublicationDate: format(
-      //   parseISO(first_publication_date),
-      //   'dd MMM yyyy',
-      //   {
-      //     locale: ptBR,
-      //   }
-      // ).toLocaleLowerCase(),
       data: {
         title,
         subtitle,
@@ -162,6 +166,7 @@ export const getStaticProps: GetStaticProps = async () => {
         next_page: postsResponse.next_page,
         results: posts,
       },
+      preview,
     },
     revalidate: 60 * 30, // 30 minutes
   };

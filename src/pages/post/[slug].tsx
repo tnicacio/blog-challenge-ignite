@@ -6,14 +6,21 @@ import Prismic from '@prismicio/client';
 import { parseISO, subMonths, format } from 'date-fns';
 import { RichText } from 'prismic-dom';
 import { useRouter } from 'next/router';
+import { ptBR } from 'date-fns/locale';
+import ApiSearchResponse from '@prismicio/client/types/ApiSearchResponse';
 import { getPrismicClient } from '../../services/prismic';
 
 import commonStyles from '../../styles/common.module.scss';
 import styles from './post.module.scss';
 import Header from '../../components/Header';
+import { PreviewButton } from '../../components/PreviewButton';
+import { Banner } from '../../components/Banner';
+import { PostsNavigation } from '../../components/PostsNavigation';
+import Comments from '../../components/Comments';
 
 interface Post {
-  first_publication_date: string | null;
+  first_publication_date?: string | null;
+  last_publication_date?: string | null;
   data: {
     title: string;
     banner: {
@@ -29,37 +36,46 @@ interface Post {
   };
 }
 
-interface PostProps {
-  post: Post;
+interface AdjacentPost {
+  uid?: string;
+  title?: string;
 }
 
-export default function Post({ post }: PostProps): JSX.Element {
+interface PostProps {
+  post: Post;
+  preview: boolean;
+  nextPost: AdjacentPost;
+  previousPost: AdjacentPost;
+}
+
+export default function Post({
+  post,
+  preview,
+  nextPost,
+  previousPost,
+}: PostProps): JSX.Element {
   const router = useRouter();
 
   if (router.isFallback) {
     return <div>Carregando...</div>;
   }
 
-  function getTotalNumberOfWords(): number {
-    let parcialTotal = 0;
+  const totalReadingTimeInMinutes = post?.data.content.reduce(
+    (sum, content) => {
+      const numberOfWords = RichText.asText(content.body)?.split(' ')?.length;
+      const readingTime = Math.ceil((sum + numberOfWords) / 200);
+      return readingTime;
+    },
+    0
+  );
 
-    const totalWords = post.data.content?.reduce((total, contentItem) => {
-      parcialTotal += contentItem.heading?.split(' ').length;
-      const wordsOnBody = contentItem.body?.map(
-        word => word.text?.split(' ').length
-      );
-      // eslint-disable-next-line no-return-assign
-      wordsOnBody.map(word => (parcialTotal += word));
-      return total + parcialTotal;
-    }, 0);
-    return totalWords;
-  }
-
-  function getReadingTimeAsString(): string {
-    const totalWords = getTotalNumberOfWords();
-    const readingTime = Math.ceil(totalWords / 200);
-    return `${readingTime} min`;
-  }
+  const formatDateAsPtBrString = (date: string): string => {
+    return date
+      ? format(parseISO(date), 'dd MMM yyyy', {
+          locale: ptBR,
+        }).toLowerCase()
+      : ' unpublished';
+  };
 
   return (
     <>
@@ -73,52 +89,80 @@ export default function Post({ post }: PostProps): JSX.Element {
         <div className={styles.loading}>Carregando...</div>
       ) : (
         <>
-          <div className={styles.banner}>
-            <img src={post.data.banner.url} alt={post.data.title} />
-          </div>
-
+          <Banner imgUri={post.data.banner?.url} alt={post.data.title} />
           <main className={commonStyles.commonContainer}>
-            <article
-              className={`${commonStyles.commonSubcontainer} ${styles.post}`}
-            >
-              <div className={styles.postHeader}>
-                <h1>{post.data.title}</h1>
+            <div className={commonStyles.commonSubcontainer}>
+              <article className={styles.post}>
+                <div className={styles.postHeader}>
+                  <h1>{post.data.title}</h1>
 
-                <div className={styles.info}>
-                  <time>
-                    <FiCalendar />
-                    {format(
-                      parseISO(post.first_publication_date),
-                      'dd MMM yyyy'
-                    ).toLowerCase()}
-                  </time>
-                  <span>
-                    <FiUser /> {post.data.author}
-                  </span>
-                  <span>
-                    <FiClock /> {getReadingTimeAsString()}
-                  </span>
+                  <div className={styles.info}>
+                    <time>
+                      <FiCalendar />
+                      {formatDateAsPtBrString(post.first_publication_date)}
+                    </time>
+                    <span>
+                      <FiUser /> {post.data.author}
+                    </span>
+                    <span>
+                      <FiClock /> {totalReadingTimeInMinutes} min
+                    </span>
+                  </div>
+
+                  <div className={styles.lastEdited}>
+                    {post.last_publication_date &&
+                      format(
+                        parseISO(post.last_publication_date),
+                        "'*editado em' dd MMM yyyy', às ' HH:mm",
+                        {
+                          locale: ptBR,
+                        }
+                      )}
+                  </div>
                 </div>
+
+                <div className={styles.content}>
+                  <div className={styles.repeatable}>
+                    {post.data.content.map(textBlock => (
+                      // eslint-disable-next-line react/no-array-index-key
+                      <div key={`${textBlock.heading}-${post.data.title}`}>
+                        <div className={styles.headish}>
+                          {textBlock.heading}
+                        </div>
+                        <div
+                          className={styles.bodyish}
+                          // eslint-disable-next-line react/no-danger
+                          dangerouslySetInnerHTML={{
+                            __html: RichText.asHtml(textBlock.body),
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </article>
+
+              <div className={styles.footer}>
+                {previousPost?.uid && (
+                  <PostsNavigation
+                    postToGo={previousPost}
+                    explanationLabel="Post anterior"
+                    styles={{ textAlign: 'left', marginRight: 'auto' }}
+                  />
+                )}
+                {nextPost?.uid && (
+                  <PostsNavigation
+                    postToGo={nextPost}
+                    explanationLabel="Próximo post"
+                    styles={{ textAlign: 'right', marginLeft: 'auto' }}
+                  />
+                )}
               </div>
 
-              <div className={styles.content}>
-                <div className={styles.repeatable}>
-                  {post.data.content.map((textBlock, index) => (
-                    // eslint-disable-next-line react/no-array-index-key
-                    <div key={`${textBlock.heading}${index}`}>
-                      <div className={styles.headish}>{textBlock.heading}</div>
-                      <div
-                        className={styles.bodyish}
-                        // eslint-disable-next-line react/no-danger
-                        dangerouslySetInnerHTML={{
-                          __html: RichText.asHtml(textBlock.body),
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </article>
+              <Comments />
+            </div>
+
+            <PreviewButton show={preview} />
           </main>
         </>
       )}
@@ -150,19 +194,25 @@ export const getStaticPaths: GetStaticPaths = async () => {
   };
 };
 
-export const getStaticProps: GetStaticProps = async ({ params }) => {
+export const getStaticProps: GetStaticProps = async ({
+  params,
+  preview = false,
+  previewData,
+}) => {
   const { slug } = params;
 
   const prismic = getPrismicClient();
-  const response = await prismic.getByUID('posts', String(slug), {});
-
+  const response = await prismic.getByUID('posts', String(slug), {
+    ref: previewData?.ref ?? null,
+  });
   const post = {
     uid: response.uid,
     first_publication_date: response.first_publication_date,
+    last_publication_date: response.last_publication_date,
     data: {
       author: response.data.author,
       banner: {
-        url: response.data.banner.url,
+        url: response.data.banner?.url || null,
       },
       content: response.data.content,
       title: response.data.title,
@@ -170,9 +220,50 @@ export const getStaticProps: GetStaticProps = async ({ params }) => {
     },
   };
 
+  const formatAdjacentPost = (
+    responsePost: ApiSearchResponse
+  ): AdjacentPost => {
+    const formattedPost = {} as AdjacentPost;
+
+    const samePost = responsePost.results[0]?.uid === slug;
+    if (responsePost?.results_size > 0 && !samePost) {
+      formattedPost.uid = responsePost.results[0].uid;
+      formattedPost.title = responsePost.results[0].data.title;
+    }
+    return formattedPost;
+  };
+
+  const getAdjacentPostFormatted = async (
+    adjacent: 'previous' | 'next'
+  ): Promise<AdjacentPost | null> => {
+    const defaultOrdering = 'document.first_publication_date';
+    const orderingsOptions = {
+      previous: `[${defaultOrdering} desc]`,
+      next: `[${defaultOrdering}]`,
+    };
+
+    const responsePost = await prismic.query(
+      Prismic.Predicates.at('document.type', 'posts'),
+      {
+        pageSize: 1,
+        orderings: orderingsOptions[adjacent],
+        after: response.id,
+      }
+    );
+
+    const formattedPost = formatAdjacentPost(responsePost);
+    return formattedPost;
+  };
+
+  const previousPost = await getAdjacentPostFormatted('previous');
+  const nextPost = await getAdjacentPostFormatted('next');
+
   return {
     props: {
       post,
+      previousPost,
+      nextPost,
+      preview,
     },
     revalidate: 60 * 30, // 30 minutes
   };
